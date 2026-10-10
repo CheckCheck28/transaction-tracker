@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Transaction Tracker</title>
+  <style>
+    /* Theme colours in one place so they are easy to change. */
+    :root {
+      --bg: #0b1020;
+      --panel: #121a2d;
+      --text: #eef3ff;
+      --muted: #9aa8c3;
+      --line: rgba(255,255,255,.09);
+      --green: #72e0b0;
+      --blue: #7c9cff;
+      --purple: #c3a0ff;
+      --red: #ff8797;
+    }
+
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      background: radial-gradient(circle at 80% 0%, #1a2850 0, var(--bg) 38%);
+      background-color: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* Sidebar on the left, dashboard on the right. */
+    .app-shell { display: grid; grid-template-columns: 245px minmax(0, 1fr); min-height: 100vh; }
+    .sidebar { padding: 28px 18px; border-right: 1px solid var(--line); background: rgba(8, 13, 27, .72); }
+    .brand { display: flex; align-items: center; gap: 11px; padding: 0 10px 32px; }
+    .brand-mark {
+      width: 38px; height: 38px; border-radius: 13px; display: grid; place-items: center;
+      color: #07131a; background: var(--green); font-weight: 900;
+      box-shadow: 0 8px 28px rgba(114,224,176,.2);
+    }
+    .brand strong { display: block; font-size: 16px; letter-spacing: -.3px; }
+    .brand small { display: block; color: var(--muted); margin-top: 3px; font-size: 11px; }
+    .nav-label { padding: 0 12px; color: #71809e; font-size: 10px; letter-spacing: 1.8px; font-weight: 800; margin: 12px 0; }
+    .nav-item {
+      display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 13px; margin: 5px 0;
+      border: 0; border-radius: 12px; color: var(--muted); background: transparent;
+      text-align: left; font: inherit; cursor: pointer;
+    }
+    .nav-item.active { color: var(--green); background: rgba(114,224,176,.1); }
+    .nav-item:hover { background: rgba(255,255,255,.05); }
+    .nav-icon { width: 20px; text-align: center; }
+    .sidebar-note {
+      margin-top: 42px; padding: 16px; border: 1px solid var(--line); border-radius: 16px;
+      background: linear-gradient(145deg, rgba(124,156,255,.12), rgba(195,160,255,.06));
+    }
+    .sidebar-note strong { font-size: 13px; }
+    .sidebar-note p { color: var(--muted); font-size: 12px; line-height: 1.6; margin: 8px 0 12px; }
+    .mini-link { color: var(--green); font-size: 12px; font-weight: 700; }
+
+    main { width: 100%; max-width: 1600px; padding: 30px clamp(18px, 3vw, 44px) 44px; margin: 0 auto; }
+    .topbar { display: flex; justify-content: space-between; align-items: center; gap: 18px; margin-bottom: 14px; }
+    .eyebrow { color: var(--green); text-transform: uppercase; letter-spacing: 1.8px; font-size: 10px; font-weight: 800; }
+    h1 { font-size: clamp(25px, 3vw, 34px); margin: 8px 0 7px; letter-spacing: -1.2px; }
+    .subtitle { color: var(--muted); font-size: 13px; margin: 0; }
+    .top-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .file-pill, .secondary-btn {
+      border: 1px solid var(--line); background: rgba(255,255,255,.035); color: var(--text);
+      padding: 11px 13px; border-radius: 11px; font: inherit; font-size: 12px;
+    }
+    .file-pill { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+    .primary-btn {
+      border: 0; background: var(--green); color: #071b17; font-weight: 800;
+      padding: 12px 16px; border-radius: 11px; font: inherit; font-size: 12px; font-weight: 800; cursor: pointer;
+    }
+    .primary-btn:hover { filter: brightness(1.06); }
+    .primary-btn:disabled { opacity: .5; cursor: wait; filter: none; }
+    .secondary-btn { cursor: pointer; }
+    button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+
+    /* Status line: progress and error messages. */
+    #status { min-height: 20px; margin: 0 0 18px; font-size: 12px; color: var(--muted); }
+    #status.error { color: var(--red); font-weight: 700; }
+
+    .stats-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 15px; margin-bottom: 18px; }
+    .card {
+      border: 1px solid var(--line); border-radius: 17px; padding: 19px;
+      background: linear-gradient(145deg, rgba(23,34,56,.95), rgba(16,24,42,.95));
+    }
+    .stat-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; color: var(--muted); font-size: 12px; }
+    .stat-icon { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 11px; background: rgba(255,255,255,.06); font-size: 16px; }
+    .stat-value { margin: 17px 0 8px; font-size: clamp(22px, 2.1vw, 29px); font-weight: 800; letter-spacing: -1px; }
+    .stat-foot { font-size: 11px; color: var(--muted); }
+    .positive { color: var(--green); }
+    .negative { color: var(--red); }
+
+    .content-grid { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(300px, .85fr); gap: 18px; }
+    .stack { display: grid; gap: 18px; align-content: start; }
+    .card-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; margin-bottom: 18px; }
+    h2 { font-size: 15px; margin: 0 0 6px; letter-spacing: -.2px; }
+    .card-description { color: var(--muted); font-size: 11px; margin: 0; line-height: 1.5; }
+    .select, .search-input {
+      color: var(--text); background: #10192b; border: 1px solid var(--line); border-radius: 9px;
+      padding: 9px 11px; font: inherit; font-size: 11px;
+    }
+    .search-input { min-width: 180px; }
+    canvas { display: block; width: 100%; height: 220px; }
+
+    .category-list { display: grid; gap: 15px; }
+    .category-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; font-size: 12px; }
+    .category-name { display: flex; gap: 9px; align-items: center; color: #dbe4f7; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+    .category-amount { font-weight: 700; }
+    .progress { grid-column: 1 / -1; height: 6px; border-radius: 10px; background: rgba(255,255,255,.07); overflow: hidden; }
+    .progress span { display: block; height: 100%; border-radius: inherit; }
+
+    .ai-card { border-color: rgba(195,160,255,.24); background: linear-gradient(145deg, rgba(65,49,105,.36), rgba(20,27,47,.98) 65%); }
+    .ai-badge { display: inline-flex; padding: 6px 9px; border-radius: 8px; background: rgba(195,160,255,.13); color: var(--purple); font-size: 10px; font-weight: 800; }
+    .insight-text { font-size: 13px; line-height: 1.7; color: #dbe4f7; margin: 15px 0; }
+    .insight-list { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+    .insight-list li { display: flex; gap: 9px; font-size: 11px; color: var(--muted); line-height: 1.5; }
+    .insight-list li span:first-child { color: var(--green); font-weight: 900; }
+    .ai-actions { display: flex; gap: 9px; margin-top: 17px; }
+    .ai-actions button { flex: 1; }
+
+    .table-controls { display: flex; flex-wrap: wrap; gap: 9px; }
+    .table-scroll { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; min-width: 610px; }
+    th { color: #71809e; text-align: left; font-size: 10px; font-weight: 800; letter-spacing: .8px; text-transform: uppercase; padding: 12px 10px; border-bottom: 1px solid var(--line); }
+    td { padding: 14px 10px; border-bottom: 1px solid rgba(255,255,255,.045); font-size: 12px; }
+    tbody tr:hover { background: rgba(255,255,255,.025); }
+    .merchant-cell { display: flex; align-items: center; gap: 10px; }
+    .merchant-icon { width: 32px; height: 32px; border-radius: 10px; display: grid; place-items: center; background: rgba(255,255,255,.06); flex: none; }
+    .merchant-cell strong { display: block; font-size: 12px; }
+    .merchant-cell small { display: block; color: var(--muted); margin-top: 3px; font-size: 10px; }
+    .tag { display: inline-block; border-radius: 7px; padding: 5px 8px; background: rgba(124,156,255,.12); color: #a8bbff; font-size: 10px; }
+    .amount { font-weight: 800; white-space: nowrap; }
+    .amount.income { color: var(--green); }
+    .empty-state { padding: 30px; text-align: center; color: var(--muted); font-size: 12px; }
+    .footer-note { margin-top: 18px; text-align: center; color: #71809e; font-size: 10px; line-height: 1.6; }
+
+    /* Smaller screens: slim sidebar, then no sidebar. */
+    @media (max-width: 1100px) {
+      .app-shell { grid-template-columns: 78px minmax(0, 1fr); }
+      .sidebar { padding: 24px 10px; }
+      .brand { justify-content: center; padding: 0 0 28px; }
+      .brand-copy, .nav-label, .nav-text, .sidebar-note { display: none; }
+      .nav-item { justify-content: center; padding: 13px 8px; }
+      .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .content-grid { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 650px) {
+      .app-shell { display: block; }
+      .sidebar { display: none; }
+      main { padding: 22px 14px 32px; }
+      .topbar { align-items: flex-start; flex-direction: column; }
+      .top-actions { width: 100%; }
+      .card { padding: 15px; }
+      .stat-value { font-size: 22px; }
+      .card-heading { flex-direction: column; }
+      .table-controls, .search-input { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">T</div>
+        <div class="brand-copy">
+          <strong>Transaction <span style="color:var(--green)">Tracker</span></strong>
+          <small>Know your money.</small>
+        </div>
+      </div>
+      <div class="nav-label">WORKSPACE</div>
+      <!-- These buttons only scroll to a section of this one page. -->
+      <button class="nav-item active" type="button" data-scroll="top"><span class="nav-icon">▦</span><span class="nav-text">Overview</span></button>
+      <button class="nav-item" type="button" data-scroll="transactions"><span class="nav-icon">↔</span><span class="nav-text">Transactions</span></button>
+      <button class="nav-item" type="button" data-scroll="insights"><span class="nav-icon">✦</span><span class="nav-text">AI Insights</span></button>
+      <button class="nav-item" type="button" data-scroll="categories"><span class="nav-icon">◷</span><span class="nav-text">Categories</span></button>
+      <div class="sidebar-note">
+        <strong>Works with scans too.</strong>
+        <p>Upload a downloaded or scanned bank statement PDF and see where your money went.</p>
+        <span class="mini-link">Powered by Gemma 4</span>
+      </div>
+    </aside>
+
+    <main id="top">
+      <header class="topbar">
+        <div>
+          <div class="eyebrow">Your money, in focus</div>
+          <h1>Expense overview<span style="color:var(--green)">.</span></h1>
+          <p class="subtitle">Import a statement PDF, then press Analyze.</p>
+        </div>
+        <div class="top-actions">
+          <span class="file-pill" id="fileName">No file chosen</span>
+          <button class="secondary-btn" id="uploadButton" type="button">＋ Import statement</button>
+          <!-- The real file input stays hidden; the button above opens it. -->
+          <input id="fileInput" type="file" accept="application/pdf" hidden>
+          <!-- This is the ONLY button that calls Gemma (one call per click). -->
+          <button class="primary-btn" id="analyzeButton" type="button">Analyze spending</button>
+        </div>
+      </header>
+      <p id="status" role="status"></p>
+
+      <section class="stats-grid" aria-label="Financial summary">
+        <article class="card">
+          <div class="stat-top"><span>Total income</span><span class="stat-icon">↗</span></div>
+          <div class="stat-value" id="incomeValue">—</div>
+          <div class="stat-foot">Money received</div>
+        </article>
+        <article class="card">
+          <div class="stat-top"><span>Total expenses</span><span class="stat-icon">↘</span></div>
+          <div class="stat-value" id="expenseValue">—</div>
+          <div class="stat-foot">Money spent</div>
+        </article>
+        <article class="card">
+          <div class="stat-top"><span>Net cash flow</span><span class="stat-icon">◈</span></div>
+          <div class="stat-value" id="cashFlowValue">—</div>
+          <div class="stat-foot">Income minus expenses</div>
+        </article>
+        <article class="card">
+          <div class="stat-top"><span>Average spend</span><span class="stat-icon">◷</span></div>
+          <div class="stat-value" id="averageValue">—</div>
+          <div class="stat-foot" id="countNote">Per expense transaction</div>
+        </article>
+      </section>
+
+      <section class="content-grid">
+        <div class="stack">
+          <article class="card">
+            <div class="card-heading">
+              <div><h2>Spending activity</h2><p class="card-description">Spending per day on the statement</p></div>
+              <span class="tag">Expense trend</span>
+            </div>
+            <canvas id="spendingChart" aria-label="Daily spending chart"></canvas>
+          </article>
+          <article class="card" id="transactions">
+            <div class="card-heading">
+              <div><h2>Transactions</h2><p class="card-description">Search and filter everything found in the PDF</p></div>
+              <div class="table-controls">
+                <input class="search-input" id="searchInput" type="search" placeholder="Search transactions…" aria-label="Search transactions">
+                <select class="select" id="categoryFilter" aria-label="Filter by category"><option value="all">All categories</option></select>
+              </div>
+            </div>
+            <div class="table-scroll">
+              <table>
+                <thead><tr><th>Description</th><th>Date</th><th>Category</th><th>Amount</th></tr></thead>
+                <tbody id="transactionRows"></tbody>
+              </table>
+              <div class="empty-state" id="emptyState">Import a statement PDF and press Analyze to see transactions.</div>
+            </div>
+          </article>
+        </div>
+
+        <div class="stack">
+          <article class="card" id="categories">
+            <div class="card-heading">
+              <div><h2>Where it goes</h2><p class="card-description">Your spending by category</p></div>
+              <span class="tag">Breakdown</span>
+            </div>
+            <div class="category-list" id="categoryList"><p class="card-description">No data yet.</p></div>
+          </article>
+          <article class="card ai-card" id="insights">
+            <div class="card-heading">
+              <div><h2>AI money insights</h2><p class="card-description">Summary written by Gemma 4. The facts below it are calculated from your transactions.</p></div>
+              <span class="ai-badge">✦ GEMMA 4</span>
+            </div>
+            <p class="insight-text" id="insightText">Import a bank statement to see a summary of your spending habits.</p>
+            <ul class="insight-list" id="insightList"></ul>
+            <div class="ai-actions">
+              <button class="secondary-btn" id="exportButton" type="button">Export CSV</button>
+            </div>
+          </article>
+        </div>
+      </section>
+      <p class="footer-note">Your PDF is sent to the Gemma API only when you press Analyze. Nothing is stored.</p>
+    </main>
+  </div>
+
+  <script>
+    // Data returned by the server after one Analyze click.
+    let transactions = [];
+    let stats = null;
+    let summaryText = "";
+    let currency = "";
+
+    const $ = id => document.getElementById(id);
+
+    // One colour per category, used by the category bars.
+    const categoryColors = {
+      "Food & Dining": "#72e0b0", "Groceries": "#8fd694", "Shopping": "#c3a0ff",
+      "Transport": "#7c9cff", "Bills & Utilities": "#e6d879", "Rent & Housing": "#74d7e8",
+      "Entertainment": "#ffbd78", "Health": "#ff8797", "Travel": "#6fb7ff",
+      "Transfers": "#a9b4cc", "Fees & Charges": "#ff9f7a", "Income": "#72e0b0", "Other": "#8c9ab5"
+    };
+
+    // Format a number as money. If the currency code is unknown, just show the number.
+    function money(value, digits = 2) {
+      try {
+        const locale = currency === "INR" ? "en-IN" : undefined;
+        return new Intl.NumberFormat(locale, {
+          style: "currency", currency: currency,
+          minimumFractionDigits: digits, maximumFractionDigits: digits
+        }).format(value);
+      } catch (e) {
+        return Number(value).toFixed(digits);
+      }
+    }
+
+    // Show YYYY-MM-DD dates as "05 Oct". Anything else is shown exactly as written.
+    function formatDate(text) {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+        return new Date(text + "T00:00:00").toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
+      }
+      return text;
+    }
+
+    // AI text goes into the page through innerHTML in some places, so escape it first.
+    function escapeHTML(value) {
+      return String(value).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+    }
+
+    function setStatus(message, isError) {
+      $("status").textContent = message;
+      $("status").className = isError ? "error" : "";
+    }
+
+    // ---------- drawing each part of the dashboard ----------
+
+    function renderSummary() {
+      if (!stats) return;
+      $("incomeValue").textContent = money(stats.total_income, 0);
+      $("expenseValue").textContent = money(stats.total_spent, 0);
+      $("cashFlowValue").textContent = money(stats.net, 0);
+      $("cashFlowValue").className = "stat-value " + (stats.net >= 0 ? "positive" : "negative");
+      $("averageValue").textContent = money(stats.average_spend, 0);
+      $("countNote").textContent = "Across " + stats.count + " transactions";
+    }
+
+    function renderCategories() {
+      const list = $("categoryList");
+      list.innerHTML = "";
+      if (!stats || !stats.categories.length) {
+        list.innerHTML = '<p class="card-description">No expense data available yet.</p>';
+        return;
+      }
+      stats.categories.forEach(c => {
+        const color = categoryColors[c.name] || categoryColors.Other;
+        const row = document.createElement("div");
+        row.className = "category-row";
+        row.innerHTML =
+          '<div class="category-name"><span class="dot" style="background:' + color + '"></span>' + escapeHTML(c.name) + '</div>' +
+          '<div class="category-amount">' + money(c.total) + '</div>' +
+          '<div class="progress"><span style="width:' + c.percent + '%;background:' + color + '"></span></div>';
+        list.appendChild(row);
+      });
+    }
+
+    function renderFilterOptions() {
+      const categories = [...new Set(transactions.map(t => t.category))].sort();
+      $("categoryFilter").innerHTML = '<option value="all">All categories</option>' +
+        categories.map(c => '<option value="' + escapeHTML(c) + '">' + escapeHTML(c) + '</option>').join("");
+    }
+
+    function renderTransactions() {
+      const search = $("searchInput").value.toLowerCase().trim();
+      const filter = $("categoryFilter").value;
+      const rows = transactions
+        .filter(t => (filter === "all" || t.category === filter) &&
+                     [t.description, t.category, t.date].some(v => String(v).toLowerCase().includes(search)))
+        .sort((a, b) => b.date.localeCompare(a.date));
+
+      const tbody = $("transactionRows");
+      tbody.innerHTML = "";
+      rows.forEach(t => {
+        const income = t.type === "credit";
+        const row = document.createElement("tr");
+        row.innerHTML =
+          '<td><div class="merchant-cell"><span class="merchant-icon">' + (income ? "↗" : "↘") + '</span>' +
+          '<div><strong>' + escapeHTML(t.description) + '</strong><small>' + (income ? "Credit" : "Debit") + '</small></div></div></td>' +
+          '<td>' + escapeHTML(formatDate(t.date)) + '</td>' +
+          '<td><span class="tag">' + escapeHTML(t.category) + '</span></td>' +
+          '<td class="amount ' + (income ? "income" : "") + '">' + (income ? "+" : "−") + money(t.amount) + '</td>';
+        tbody.appendChild(row);
+      });
+
+      const empty = $("emptyState");
+      empty.hidden = rows.length > 0;
+      empty.textContent = transactions.length
+        ? "No matching transactions found."
+        : "Import a statement PDF and press Analyze to see transactions.";
+    }
+
+    // Simple bar chart drawn with the browser's canvas (no chart library).
+    function renderChart() {
+      const canvas = $("spendingChart");
+      const rect = canvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      const width = rect.width, height = 220;
+      canvas.width = Math.max(1, width * dpr);
+      canvas.height = height * dpr;
+      const ctx = canvas.getContext("2d");
+      ctx.scale(dpr, dpr);
+      ctx.clearRect(0, 0, width, height);
+
+      // Add up spending per date.
+      const daily = {};
+      transactions.filter(t => t.type === "debit").forEach(t => { daily[t.date] = (daily[t.date] || 0) + t.amount; });
+      const entries = Object.entries(daily).sort((a, b) => a[0].localeCompare(b[0])).slice(-8);
+
+      ctx.font = "12px sans-serif";
+      if (!entries.length) {
+        ctx.fillStyle = "#9aa8c3";
+        ctx.fillText("No expense data to chart yet.", 12, 30);
+        return;
+      }
+
+      const max = Math.max(...entries.map(e => e[1])) || 1;
+      const left = 8, right = 8, top = 12, bottom = 34;
+      const chartHeight = height - top - bottom;
+      const slot = (width - left - right) / entries.length;
+
+      ctx.strokeStyle = "rgba(255,255,255,.07)";
+      ctx.beginPath(); ctx.moveTo(left, top + chartHeight); ctx.lineTo(width - right, top + chartHeight); ctx.stroke();
+
+      entries.forEach(([date, amount], i) => {
+        const barWidth = Math.min(28, slot * .52);
+        const barHeight = amount / max * chartHeight;
+        const x = left + slot * i + (slot - barWidth) / 2;
+        const y = top + chartHeight - barHeight;
+        ctx.fillStyle = "#72e0b0";
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(x, y, barWidth, barHeight, 6); else ctx.rect(x, y, barWidth, barHeight);
+        ctx.fill();
+        ctx.fillStyle = "#9aa8c3"; ctx.font = "10px sans-serif"; ctx.textAlign = "center";
+        ctx.fillText(formatDate(date).slice(0, 10), x + barWidth / 2, height - 12);
+      });
+    }
+
+    // Gemma's summary on top; the bullets are plain calculations from the stats.
+    function renderInsights() {
+      if (!stats) return;
+      $("insightText").textContent = summaryText || "No summary was returned.";
+      const facts = [];
+      if (stats.categories.length) {
+        const top = stats.categories[0];
+        facts.push("Biggest category: " + top.name + " at " + money(top.total) + " (" + top.percent + "% of spending).");
+      }
+      if (stats.biggest.length) {
+        const b = stats.biggest[0];
+        facts.push("Biggest single spend: " + b.description + " for " + money(b.amount) + ".");
+      }
+      if (stats.total_spent > 0) {
+        facts.push("Cutting 10% of spending would save about " + money(stats.total_spent * 0.1) + " over this statement.");
+      }
+      $("insightList").innerHTML = facts.map(f => "<li><span>✦</span><span>" + escapeHTML(f) + "</span></li>").join("");
+    }
+
+    function renderDashboard() {
+      renderSummary();
+      renderCategories();
+      renderFilterOptions();
+      renderTransactions();
+      renderChart();
+      renderInsights();
+    }
+
+    // ---------- buttons ----------
+
+    // "Import statement" only opens the file picker. No Gemma call here.
+    $("uploadButton").addEventListener("click", () => $("fileInput").click());
+    $("fileInput").addEventListener("change", () => {
+      const file = $("fileInput").files[0];
+      $("fileName").textContent = file ? file.name : "No file chosen";
+      setStatus("", false);
+    });
+
+    // "Analyze spending" sends the PDF to the server: exactly one Gemma call per click.
+    $("analyzeButton").addEventListener("click", async () => {
+      const file = $("fileInput").files[0];
+      if (!file) { setStatus("Choose a PDF with Import statement first.", true); return; }
+
+      $("analyzeButton").disabled = true;
+      const started = Date.now();
+      setStatus("Reading your statement...", false);
+      const timer = setInterval(() => {
+        setStatus("Reading your statement... " + Math.round((Date.now() - started) / 1000) + "s", false);
+      }, 1000);
+
+      const form = new FormData();
+      form.append("pdf", file);
+
+      try {
+        const response = await fetch("/analyze", { method: "POST", body: form, signal: AbortSignal.timeout(120000) });
+        const data = await response.json();
+        if (!response.ok) { setStatus(data.error || "Something went wrong.", true); return; }
+
+        currency = data.currency;
+        stats = data.stats;
+        transactions = data.transactions;
+        summaryText = data.summary;
+        $("searchInput").value = "";
+        renderDashboard();
+        setStatus("Found " + transactions.length + " transactions.", false);
+      } catch (e) {
+        setStatus(e.name === "TimeoutError"
+          ? "Gemma took longer than 2 minutes. Try again, or try a shorter PDF."
+          : "Could not reach the server. Is app.py running?", true);
+      } finally {
+        clearInterval(timer);
+        $("analyzeButton").disabled = false;
+      }
+    });
+
+    $("searchInput").addEventListener("input", renderTransactions);
+    $("categoryFilter").addEventListener("change", renderTransactions);
+
+    // Download the loaded transactions as a CSV file.
+    $("exportButton").addEventListener("click", () => {
+      if (!transactions.length) { setStatus("Nothing to export yet. Analyze a statement first.", true); return; }
+      const headers = ["Date", "Description", "Category", "Amount", "Type"];
+      const rows = transactions.map(t => [t.date, t.description, t.category, t.amount, t.type]);
+      const csv = [headers, ...rows].map(r => r.map(v => '"' + String(v).replace(/"/g, '""') + '"').join(",")).join("\r\n");
+      const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
+      const link = document.createElement("a");
+      link.href = url; link.download = "transactions.csv"; link.click();
+      URL.revokeObjectURL(url);
+    });
+
+    // Sidebar buttons scroll to a section of this same page.
+    document.querySelectorAll("[data-scroll]").forEach(button => {
+      button.addEventListener("click", () => {
+        const target = $(button.dataset.scroll);
+        if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
+        document.querySelectorAll(".nav-item").forEach(i => i.classList.remove("active"));
+        button.classList.add("active");
+      });
+    });
+
+    window.addEventListener("resize", renderChart);
+    renderDashboard();
+  </script>
+</body>
+</html>
