@@ -2,9 +2,9 @@
 Transaction Tracker - backend.
 
 Flow for each click on "Analyze":
-  1. The browser uploads a PDF to /analyze.
-  2. We try to read selectable text from the PDF (downloaded bank statements).
-     If there is almost no text, the PDF is a scan, so we turn the pages into one image.
+  1. The browser uploads a PDF, PNG, JPG or CSV to /analyze.
+  2. PDFs and CSVs: we read the text. A PDF with almost no text is a scan, so we turn its
+     pages into one image. PNG/JPG photos are shrunk and sent as an image.
   3. We make ONE Gemma call (ask or ask_with_image). Gemma answers in a compact
      line-by-line format (short answers are much faster than long JSON).
   4. Python (not the AI) adds everything up and sends the stats back to the page.
@@ -37,6 +37,7 @@ app.config["MAX_CONTENT_LENGTH"] = 10 * 1024 * 1024  # refuse uploads bigger tha
 MIN_TEXT_CHARS = 50      # fewer characters than this = we treat the PDF as a scan
 MAX_TEXT_CHARS = 30000   # cap how much text we send to Gemma
 MAX_SCAN_PAGES = 3       # cap how many scanned pages we send as an image
+MAX_IMAGE_SIDE = 2000    # shrink photos so no side is longer than this many pixels
 
 CATEGORIES = [
     "Food & Dining", "Groceries", "Shopping", "Transport", "Bills & Utilities",
@@ -97,9 +98,53 @@ def tidy_text(text):
     return text.strip()
 
 
-def call_gemma(pdf_bytes):
+def detect_kind(data, filename):
+    """Decide what the uploaded file is by looking inside it (not only at its name)."""
+    if data.startswith(b"%PDF"):
+        return "pdf"
+    if data.startswith(b"\x89PNG") or data.startswith(b"\xff\xd8\xff"):  # PNG or JPEG
+        return "image"
+    if filename.lower().endswith((".csv", ".txt")):
+        return "csv"
+    return None
+
+
+def image_to_file(data):
+    """Shrink a photo/screenshot (big images are slow) and save it as a temporary jpg."""
+    image = Image.open(io.BytesIO(data)).convert("RGB")
+    image.thumbnail((MAX_IMAGE_SIDE, MAX_IMAGE_SIDE))  # keeps the shape, limits the size
+
+    tmp = tempfile.NamedTemporaryFile(suffix=".jpg", delete=False)
+    tmp.close()
+    image.save(tmp.name, "JPEG", quality=85)
+    return tmp.name
+
+
+def ask_gemma_with_picture(image_path):
+    """Send one picture to Gemma, then delete the temporary file."""
+    try:
+        return ask_with_image(PROMPT, image_path)
+    finally:
+        os.remove(image_path)
+
+
+def call_gemma(data, kind):
     """Make the single Gemma call for this click and return its raw text answer."""
-    doc = pymupdf.open(stream=pdf_bytes, filetype="pdf")
+    if kind == "csv":
+        try:
+            text = data.decode("utf-8-sig")  # utf-8-sig also removes the hidden BOM Excel adds
+        except UnicodeDecodeError:
+            text = data.decode("latin-1")
+        text = tidy_text(text)
+        print(f"CSV: {len(text)} characters. Sending text to Gemma...")
+        return ask(PROMPT + "\n\nSTATEMENT TEXT:\n" + text[:MAX_TEXT_CHARS])
+
+    if kind == "image":
+        print("Image: sending picture to Gemma...")
+        return ask_gemma_with_picture(image_to_file(data))
+
+    # PDF: try the text first.
+    doc = pymupdf.open(stream=data, filetype="pdf")
     text = tidy_text("".join(page.get_text() for page in doc))
     print(f"PDF has {len(doc)} page(s), {len(text)} characters of text.")
 
@@ -110,11 +155,7 @@ def call_gemma(pdf_bytes):
 
     # Scanned PDF -> send a picture instead.
     print("Scanned PDF: sending image to Gemma...")
-    image_path = pdf_to_image_file(doc)
-    try:
-        return ask_with_image(PROMPT, image_path)
-    finally:
-        os.remove(image_path)  # clean up the temporary picture
+    return ask_gemma_with_picture(pdf_to_image_file(doc))
 
 
 # ---------------------------------------------------------------- reading Gemma's answer
@@ -213,24 +254,25 @@ def home():
 
 @app.route("/analyze", methods=["POST"])
 def analyze():
-    file = request.files.get("pdf")
+    file = request.files.get("file")
     if file is None or file.filename == "":
-        return jsonify(error="Choose a PDF file first."), 400
+        return jsonify(error="Choose a PDF, PNG, JPG or CSV file first."), 400
 
-    pdf_bytes = file.read()
-    if not pdf_bytes.startswith(b"%PDF"):
-        return jsonify(error="That file is not a PDF."), 400
+    data = file.read()
+    kind = detect_kind(data, file.filename)
+    if kind is None:
+        return jsonify(error="Unsupported file. Please use a PDF, PNG, JPG or CSV."), 400
 
     try:
-        raw = call_gemma(pdf_bytes)
+        raw = call_gemma(data, kind)
         print("Gemma answered.")
         currency, summary, transactions = parse_answer(raw)
     except Exception:
         # We deliberately don't echo details back, so nothing sensitive leaks.
-        return jsonify(error="Could not read that statement. Try a clearer PDF."), 500
+        return jsonify(error="Could not read that file. Try a clearer one."), 500
 
     if not transactions:
-        return jsonify(error="No transactions found in that PDF."), 422
+        return jsonify(error="No transactions found in that file."), 422
 
     return jsonify(
         currency=currency[:3].upper(),

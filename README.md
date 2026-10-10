@@ -1,6 +1,6 @@
 # Transaction Tracker
 
-Upload a bank statement PDF (a downloaded one or a scan) and get your total spending,
+Upload a bank statement as a PDF (downloaded or scanned), a PNG/JPG photo or screenshot, or a CSV, and get your total spending,
 a category breakdown, your biggest spends and a short written summary.
 
 **Model:** `gemma-4-26b-a4b-it` (Gemma 4 through the Gemini API, using the `google-genai` package)
@@ -9,8 +9,8 @@ a category breakdown, your biggest spends and a short written summary.
 
 ## How it works
 
-1. You pick a PDF and click **Analyze statement**.
-2. The server reads the text from the PDF. If there is almost no text (a scan), it turns the pages into one image instead.
+1. You pick a PDF, PNG, JPG or CSV file and click **Analyze spending**.
+2. The server reads the text from a PDF or CSV. A scanned PDF is turned into one image, and PNG/JPG photos are shrunk and sent as an image.
 3. One Gemma call (`ask` or `ask_with_image` from `gemma_client.py`) returns the transactions as JSON.
 4. Plain Python adds up the totals and categories. No database, no login.
 
@@ -30,7 +30,7 @@ a category breakdown, your biggest spends and a short written summary.
    ```
    python app.py
    ```
-5. Open http://localhost:5000, choose a PDF and click **Analyze statement**.
+5. Open http://localhost:5000, choose a file with **Import statement** and click **Analyze spending**.
 
 ## Files
 
